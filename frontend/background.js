@@ -189,7 +189,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   }
 });
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'loading' && changeInfo.url) {
     // New page navigation — reset streams and download states for this tab
     const streams = detectedStreams.get(tabId);
@@ -200,7 +200,24 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     }
     chrome.action.setBadgeText({ text: '', tabId });
   }
+  // Detect YouTube video pages — yt-dlp handles these natively
+  if (changeInfo.status === 'complete' && tab.url) {
+    maybeAddYouTubeStream(tabId, tab.url);
+  }
 });
+
+function maybeAddYouTubeStream(tabId, url) {
+  try {
+    const u = new URL(url);
+    const isYT = u.hostname === 'www.youtube.com' || u.hostname === 'youtube.com';
+    if (!isYT || u.pathname !== '/watch' || !u.searchParams.get('v')) return;
+    if (!detectedStreams.has(tabId)) detectedStreams.set(tabId, new Map());
+    const streams = detectedStreams.get(tabId);
+    if (streams.has(url)) return;
+    streams.set(url, { url, type: 'YouTube', contentType: '', timestamp: Date.now() });
+    updateBadge(tabId, streams.size);
+  } catch {}
+}
 
 // ─── Messages from Popup & Content Script ────────────────────────────────────
 
@@ -282,7 +299,8 @@ const DIRECT_DOWNLOAD_TYPES = new Set(['MP4', 'WebM', 'MKV', 'MOV', 'Video']);
 // Types that are streaming manifests — downloading them as-is gives you a
 // text playlist file, not actual video. The companion app (yt-dlp + ffmpeg)
 // must assemble the segments.
-const STREAMING_TYPES = new Set(['HLS', 'DASH', 'TS']);
+// 'YouTube' is also routed through the companion app (yt-dlp's native extractor).
+const STREAMING_TYPES = new Set(['HLS', 'DASH', 'TS', 'YouTube']);
 
 function handleDownload(url, streamType, pageUrl, sendResponse, tabId,
                        cookies = [], capturedHeaders = [], listenerFired = false, allHeaderNames = []) {

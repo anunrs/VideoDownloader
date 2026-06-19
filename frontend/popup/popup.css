@@ -127,12 +127,13 @@ body {
   border-radius: 3px;
   text-transform: uppercase;
 }
-.badge-hls   { background: var(--accent); color: #fff; }
-.badge-dash  { background: var(--blue);   color: #fff; }
-.badge-mp4   { background: var(--green);  color: #fff; }
-.badge-webm  { background: var(--purple); color: #fff; }
-.badge-ts    { background: #e67e22;       color: #fff; }
-.badge-video { background: var(--grey);   color: #fff; }
+.badge-hls     { background: var(--accent); color: #fff; }
+.badge-dash    { background: var(--blue);   color: #fff; }
+.badge-mp4     { background: var(--green);  color: #fff; }
+.badge-webm    { background: var(--purple); color: #fff; }
+.badge-ts      { background: #e67e22;       color: #fff; }
+.badge-video   { background: var(--grey);   color: #fff; }
+.badge-youtube { background: #ff0000;       color: #fff; }
 
 /* URL text */
 .stream-info {

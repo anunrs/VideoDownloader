@@ -41,11 +41,12 @@ function renderStreams(streams) {
     const ds = stream.downloadState; // 'downloading' | 'done' | 'failed' | null
     const isActive = ds === 'downloading' || ds === 'done';
     const btnLabel = isActive ? 'Downloading ↓' : 'Download';
+    const displayUrl = friendlyUrl(stream.url, stream.type);
 
     li.innerHTML = `
       <span class="badge ${badgeClass}">${stream.type}</span>
       <span class="stream-info">
-        <span class="stream-url" title="${escHtml(stream.url)}">${escHtml(stream.url)}</span>
+        <span class="stream-url" title="${escHtml(stream.url)}">${escHtml(displayUrl)}</span>
       </span>
       <button class="btn-download" data-url="${escHtml(stream.url)}" data-type="${escHtml(stream.type)}"
         ${isActive ? 'disabled' : ''}>
@@ -163,6 +164,17 @@ function showState(state) {
   if (state === 'empty')   stateEmpty.classList.remove('hidden');
   if (state === 'loading') stateLoading.classList.remove('hidden');
   if (state === 'list')    streamList.classList.remove('hidden');
+}
+
+// Returns a shorter display string for well-known URL patterns.
+function friendlyUrl(url, type) {
+  if (type === 'YouTube') {
+    try {
+      const v = new URL(url).searchParams.get('v');
+      return v ? `youtube.com/watch?v=${v}` : url;
+    } catch {}
+  }
+  return url;
 }
 
 function escHtml(str) {
