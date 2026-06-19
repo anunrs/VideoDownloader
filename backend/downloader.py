@@ -184,18 +184,26 @@ class Downloader:
         if self.ffmpeg:
             cmd += ['--ffmpeg-location', self.ffmpeg]
 
-        if captured_cookie:
+        # YouTube has its own extractor inside yt-dlp — adding --impersonate or
+        # custom headers breaks its internal API calls and n-challenge solving.
+        # The iOS player client bypasses n-challenge but rejects cookie files,
+        # so we skip cookies entirely for YouTube (public videos don't need them).
+        _url_lower = url.lower()
+        is_youtube = 'youtube.com/watch' in _url_lower or 'youtu.be/' in _url_lower
+
+        if is_youtube:
+            # android client bypasses both n-challenge and GVS PO Token requirements.
+            # ios was tried but requires PO Token for HTTPS formats (GVS restriction).
+            # mweb is the fallback if android gets restricted in future yt-dlp versions.
+            cmd += ['--extractor-args', 'youtube:player_client=android,mweb']
+            log.debug('YouTube detected: using android+mweb clients, skipping cookies')
+        elif captured_cookie:
             # Cookie header intercepted from the browser's own CDN request.
             cmd += ['--add-header', f'Cookie: {captured_cookie}']
         elif cookie_file:
             cmd += ['--cookies', cookie_file]
         else:
             log.warning('No cookies available — download may fail for auth-protected streams.')
-
-        # YouTube has its own extractor inside yt-dlp — adding --impersonate or
-        # custom headers breaks its internal API calls and n-challenge solving.
-        _url_lower = url.lower()
-        is_youtube = 'youtube.com/watch' in _url_lower or 'youtu.be/' in _url_lower
 
         # Forward all non-cookie auth headers the browser sent (Origin, Referer, tokens…).
         # Skip for YouTube — its extractor sets its own headers internally.
