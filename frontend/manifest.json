@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "Video Downloader",
+  "version": "1.0.0",
+  "description": "Detect and download videos from any website. Supports MP4, WebM, HLS, and DASH streams.",
+
+  "permissions": [
+    "webRequest",
+    "tabs",
+    "downloads",
+    "nativeMessaging",
+    "storage",
+    "scripting",
+    "alarms",
+    "cookies"
+  ],
+  "host_permissions": ["<all_urls>"],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "Video Downloader"
+  },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtgt1NCoxputA5nVnWw8UCr0SCIxGbZWxekhUm1z3NE0bKpGPqUOFUgwoW7VW1SfSNT5nr/RfQrRstBRZv9O8wnJ11ThB82wCNINX3jK0KD5wNTTr6xQjvyzaJ7OnClQElhan/biqoduNCoNDMODtU1L2Hlg+JbwUBrV9tFSQihlJG7IckQI3IAn5UQxsQQYVcFuoQnYqKTODghZjXlobDfH4UqiNSl/323Eg3fVGC1sU/KiTP/el55wz+64vUVLzY/0tfoGRllIBZyj25QVJjJH76U4xe8WzgwQmIDPPO/enEFKE7qZN8zQ74j1p5SiY+INXst3lfuKvON6EasKhCwIDAQAB"
+}

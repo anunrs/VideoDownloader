@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Video Downloader</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <img src="../icons/icon48.png" class="header-icon" alt="" />
+    <h1 class="header-title">Video Downloader</h1>
+    <button id="btn-refresh" class="btn-icon" title="Refresh stream list">&#x21bb;</button>
+  </header>
+
+  <!-- Stream list -->
+  <main id="main">
+
+    <!-- Empty state -->
+    <div id="state-empty" class="state hidden">
+      <div class="state-icon">&#x1F3A5;</div>
+      <p class="state-title">No videos detected</p>
+      <p class="state-hint">Play a video on this page, then click Refresh.</p>
+    </div>
+
+    <!-- Loading state -->
+    <div id="state-loading" class="state">
+      <div class="spinner"></div>
+      <p class="state-hint">Scanning&hellip;</p>
+    </div>
+
+    <!-- Stream items are injected here -->
+    <ul id="stream-list" class="stream-list hidden"></ul>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <span id="footer-count" class="footer-count"></span>
+    <span class="footer-note">HLS/DASH requires the companion app</span>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

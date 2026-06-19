@@ -1,0 +1,9 @@
+{
+  "name": "com.videodownloader.host",
+  "description": "Video Downloader Native Messaging Host",
+  "path": "C:\\Users\\anush\\PersonalProjects\\VideoDownloader\\backend\\host.bat",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://cpejpofmeghicfogjehflembmdolohbp/"
+  ]
+}

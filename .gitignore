@@ -1,0 +1,23 @@
+# Chrome extension private key — NEVER commit this
+frontend.pem
+frontend.crx
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+
+# Temp cookie files written at runtime
+vd_cookies_*.txt
+vd_ckdb_*.sqlite
+
+# Claude Code settings
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
