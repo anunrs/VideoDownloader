@@ -192,39 +192,47 @@ class Downloader:
         else:
             log.warning('No cookies available — download may fail for auth-protected streams.')
 
+        # YouTube has its own extractor inside yt-dlp — adding --impersonate or
+        # custom headers breaks its internal API calls and n-challenge solving.
+        _url_lower = url.lower()
+        is_youtube = 'youtube.com/watch' in _url_lower or 'youtu.be/' in _url_lower
+
         # Forward all non-cookie auth headers the browser sent (Origin, Referer, tokens…).
+        # Skip for YouTube — its extractor sets its own headers internally.
         # Track which header names we set so we don't add conflicting duplicates below.
         already_set: set[str] = set()
-        for h in (captured_headers or []):
-            name  = h.get('name', '')
-            value = h.get('value', '')
-            if not name or not value or name.lower() == 'cookie':
-                continue
-            cmd += ['--add-header', f'{name}: {value}']
-            already_set.add(name.lower())
-            log.debug('Forwarding captured header: %s: %s…', name, value[:60])
+        if not is_youtube:
+            for h in (captured_headers or []):
+                name  = h.get('name', '')
+                value = h.get('value', '')
+                if not name or not value or name.lower() == 'cookie':
+                    continue
+                cmd += ['--add-header', f'{name}: {value}']
+                already_set.add(name.lower())
+                log.debug('Forwarding captured header: %s: %s…', name, value[:60])
 
-        # Impersonate Chrome's TLS + HTTP/2 fingerprint (requires curl_cffi).
-        cmd += ['--impersonate', 'chrome']
+            # Impersonate Chrome's TLS + HTTP/2 fingerprint (requires curl_cffi).
+            # Not used for YouTube — it conflicts with yt-dlp's YouTube API client.
+            cmd += ['--impersonate', 'chrome']
 
-        # Fallback User-Agent (curl_cffi sets its own, but this acts as a safety net).
-        cmd += ['--user-agent',
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                'AppleWebKit/537.36 (KHTML, like Gecko) '
-                'Chrome/137.0.0.0 Safari/537.36']
+            # Fallback User-Agent (curl_cffi sets its own, but this acts as a safety net).
+            cmd += ['--user-agent',
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                    'AppleWebKit/537.36 (KHTML, like Gecko) '
+                    'Chrome/137.0.0.0 Safari/537.36']
 
-        # Add Referer / Origin from the page URL ONLY if the browser capture did not
-        # already provide them.  Sending two conflicting Origin headers causes 403.
-        if referer and referer.startswith('http'):
-            if 'referer' not in already_set:
-                cmd += ['--add-header', f'Referer: {referer}']
-            if 'origin' not in already_set:
-                try:
-                    from urllib.parse import urlparse as _up
-                    _p = _up(referer)
-                    cmd += ['--add-header', f'Origin: {_p.scheme}://{_p.netloc}']
-                except Exception:
-                    pass
+            # Add Referer / Origin from the page URL ONLY if the browser capture did not
+            # already provide them.  Sending two conflicting Origin headers causes 403.
+            if referer and referer.startswith('http'):
+                if 'referer' not in already_set:
+                    cmd += ['--add-header', f'Referer: {referer}']
+                if 'origin' not in already_set:
+                    try:
+                        from urllib.parse import urlparse as _up
+                        _p = _up(referer)
+                        cmd += ['--add-header', f'Origin: {_p.scheme}://{_p.netloc}']
+                    except Exception:
+                        pass
 
         cmd.append(url)
         log.debug('yt-dlp command: %s', ' '.join(cmd))
