@@ -184,19 +184,31 @@ class Downloader:
         if self.ffmpeg:
             cmd += ['--ffmpeg-location', self.ffmpeg]
 
-        # YouTube has its own extractor inside yt-dlp — adding --impersonate or
-        # custom headers breaks its internal API calls and n-challenge solving.
-        # The iOS player client bypasses n-challenge but rejects cookie files,
-        # so we skip cookies entirely for YouTube (public videos don't need them).
+        # Classify the URL so we can apply the right auth strategy per site.
         _url_lower = url.lower()
-        is_youtube = 'youtube.com/watch' in _url_lower or 'youtu.be/' in _url_lower
+        is_youtube   = 'youtube.com/watch' in _url_lower or 'youtu.be/' in _url_lower
+        is_instagram = 'instagram.com/' in _url_lower
 
         if is_youtube:
+            # YouTube has its own extractor inside yt-dlp — adding --impersonate or
+            # custom headers breaks its internal API calls and n-challenge solving.
             # android client bypasses both n-challenge and GVS PO Token requirements.
-            # ios was tried but requires PO Token for HTTPS formats (GVS restriction).
-            # mweb is the fallback if android gets restricted in future yt-dlp versions.
+            # mweb is kept as automatic fallback.
             cmd += ['--extractor-args', 'youtube:player_client=android,mweb']
             log.debug('YouTube detected: using android+mweb clients, skipping cookies')
+        elif is_instagram:
+            # Instagram requires browser cookies for most content (login-gated).
+            # Use the cookie file; --impersonate is added below with the other sites.
+            # Do NOT forward CDN request headers — the page URL is passed to yt-dlp's
+            # Instagram extractor which manages its own API headers.
+            # --ignore-errors lets yt-dlp skip image items in carousel posts (which
+            # have no video formats) without treating the whole download as failed.
+            cmd += ['--ignore-errors']
+            if cookie_file:
+                cmd += ['--cookies', cookie_file]
+                log.debug('Instagram detected: passing cookie file to yt-dlp extractor')
+            else:
+                log.warning('Instagram: no cookies available — private content will fail.')
         elif captured_cookie:
             # Cookie header intercepted from the browser's own CDN request.
             cmd += ['--add-header', f'Cookie: {captured_cookie}']
@@ -206,10 +218,10 @@ class Downloader:
             log.warning('No cookies available — download may fail for auth-protected streams.')
 
         # Forward all non-cookie auth headers the browser sent (Origin, Referer, tokens…).
-        # Skip for YouTube — its extractor sets its own headers internally.
-        # Track which header names we set so we don't add conflicting duplicates below.
+        # Skip for YouTube (extractor manages its own) and Instagram (page-URL extractor,
+        # no CDN headers to replay).
         already_set: set[str] = set()
-        if not is_youtube:
+        if not is_youtube and not is_instagram:
             for h in (captured_headers or []):
                 name  = h.get('name', '')
                 value = h.get('value', '')
@@ -220,7 +232,7 @@ class Downloader:
                 log.debug('Forwarding captured header: %s: %s…', name, value[:60])
 
             # Impersonate Chrome's TLS + HTTP/2 fingerprint (requires curl_cffi).
-            # Not used for YouTube — it conflicts with yt-dlp's YouTube API client.
+            # Not used for YouTube/Instagram — their extractors manage their own sessions.
             cmd += ['--impersonate', 'chrome']
 
             # Fallback User-Agent (curl_cffi sets its own, but this acts as a safety net).

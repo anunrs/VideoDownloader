@@ -67,12 +67,13 @@ function urlFileExtension(rawUrl) {
 function detectType(url, contentType) {
   const u = url.toLowerCase();
   const c = (contentType || '').toLowerCase();
-  if (u.includes('.m3u8') || c.includes('mpegurl'))  return 'HLS';
-  if (u.includes('.mpd')  || c.includes('dash+xml')) return 'DASH';
-  if (u.includes('.mp4')  || u.includes('.m4v'))      return 'MP4';
-  if (u.includes('.webm'))                            return 'WebM';
-  if (u.includes('.mkv'))                             return 'MKV';
-  if (u.includes('.ts'))                              return 'TS';
+  if (u.includes('.m3u8') || c.includes('mpegurl'))                         return 'HLS';
+  if (u.includes('.mpd')  || c.includes('dash+xml'))                        return 'DASH';
+  if (u.includes('.mp4')  || u.includes('.m4v') ||
+      c.startsWith('video/mp4') || c.startsWith('video/x-m4v'))             return 'MP4';
+  if (u.includes('.webm') || c.startsWith('video/webm'))                    return 'WebM';
+  if (u.includes('.mkv')  || c.startsWith('video/x-matroska'))              return 'MKV';
+  if (u.includes('.ts'))                                                     return 'TS';
   return 'Video';
 }
 
@@ -87,9 +88,20 @@ function isHlsSegment(url) {
          u.includes('chunk');
 }
 
+// Hostnames whose video URLs are handled via page-level detection (e.g. yt-dlp
+// extractors) and must NOT be added as raw CDN stream entries.
+// Instagram serves DASH init segments and short-lived CDN tokens — useless to
+// download directly. The maybeAddInstagramStream() page detector covers these.
+const BLOCKED_CDN_RE = /(?:^|\.)(?:cdninstagram\.com|fbcdn\.net)$/i;
+
 // Central gate: should this URL be added to the detected stream list?
 function isVideoResource(url, contentType) {
   if (!url || url.startsWith('blob:') || url.startsWith('data:')) return false;
+
+  // Block CDN hostnames that are covered by page-level detectors
+  try {
+    if (BLOCKED_CDN_RE.test(new URL(url).hostname)) return false;
+  } catch { return false; }
 
   const ext = urlFileExtension(url);
 
@@ -200,9 +212,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     }
     chrome.action.setBadgeText({ text: '', tabId });
   }
-  // Detect YouTube video pages — yt-dlp handles these natively
+  // Detect YouTube / Instagram pages — yt-dlp handles these natively
   if (changeInfo.status === 'complete' && tab.url) {
     maybeAddYouTubeStream(tabId, tab.url);
+    maybeAddInstagramStream(tabId, tab.url);
   }
 });
 
@@ -215,6 +228,25 @@ function maybeAddYouTubeStream(tabId, url) {
     const streams = detectedStreams.get(tabId);
     if (streams.has(url)) return;
     streams.set(url, { url, type: 'YouTube', contentType: '', timestamp: Date.now() });
+    updateBadge(tabId, streams.size);
+  } catch {}
+}
+
+// Instagram Reels, posts, and stories — yt-dlp has a native Instagram extractor
+// that handles auth and DASH/HLS assembly. The raw CDN URLs intercepted by the
+// extension are just DASH init segments, so we use the page URL instead.
+function maybeAddInstagramStream(tabId, url) {
+  try {
+    const u = new URL(url);
+    const isIG = u.hostname === 'www.instagram.com' || u.hostname === 'instagram.com';
+    if (!isIG) return;
+    // Only reel, post, and story URLs contain downloadable video
+    const isVideoPage = /^\/(reel|p|tv|stories)\//.test(u.pathname);
+    if (!isVideoPage) return;
+    if (!detectedStreams.has(tabId)) detectedStreams.set(tabId, new Map());
+    const streams = detectedStreams.get(tabId);
+    if (streams.has(url)) return;
+    streams.set(url, { url, type: 'Instagram', contentType: '', timestamp: Date.now() });
     updateBadge(tabId, streams.size);
   } catch {}
 }
@@ -299,8 +331,8 @@ const DIRECT_DOWNLOAD_TYPES = new Set(['MP4', 'WebM', 'MKV', 'MOV', 'Video']);
 // Types that are streaming manifests — downloading them as-is gives you a
 // text playlist file, not actual video. The companion app (yt-dlp + ffmpeg)
 // must assemble the segments.
-// 'YouTube' is also routed through the companion app (yt-dlp's native extractor).
-const STREAMING_TYPES = new Set(['HLS', 'DASH', 'TS', 'YouTube']);
+// 'YouTube' and 'Instagram' are also routed through the companion app (yt-dlp's native extractor).
+const STREAMING_TYPES = new Set(['HLS', 'DASH', 'TS', 'YouTube', 'Instagram']);
 
 function handleDownload(url, streamType, pageUrl, sendResponse, tabId,
                        cookies = [], capturedHeaders = [], listenerFired = false, allHeaderNames = []) {
@@ -316,7 +348,15 @@ function handleDownload(url, streamType, pageUrl, sendResponse, tabId,
       allHeaderNames,    // all header names the browser sent (for diagnostics)
     }, (result) => {
       downloadStates.set(url, { status: result.success ? 'done' : 'failed', tabId });
-      if (!result.success) {
+      if (result.success) {
+        const filename = result.filename ? result.filename.split(/[/\\]/).pop() : null;
+        chrome.notifications.create('', {
+          type:    'basic',
+          iconUrl: 'icons/icon48.png',
+          title:   'Download complete',
+          message: filename ? `Saved: ${filename}` : 'Saved to Downloads/VideoDownloader',
+        });
+      } else {
         console.error('[Download] native host error:', result.error);
       }
     });
@@ -347,12 +387,24 @@ function handleDownload(url, streamType, pageUrl, sendResponse, tabId,
 }
 
 function deriveFilename(url, type) {
+  // Map stream type to a sane file extension
+  const EXT = { MP4: 'mp4', WebM: 'webm', MKV: 'mkv', MOV: 'mov', Video: 'mp4' };
+  const ext = EXT[type] ?? type.toLowerCase();
   try {
     const pathname = new URL(url).pathname;
-    const name     = pathname.split('/').pop() || 'video';
-    return name.includes('.') ? name : `${name}.${type.toLowerCase()}`;
+    const name     = pathname.split('/').pop() || '';
+    if (name.includes('.')) {
+      // Real filename with extension already (e.g. clip.mp4)
+      return `VideoDownloader/${name}`;
+    } else if (name && name.length <= 60) {
+      // Short slug — add the correct extension
+      return `VideoDownloader/${name}.${ext}`;
+    } else {
+      // Long CDN token (Instagram, etc.) — use a timestamp name instead
+      return `VideoDownloader/video_${Date.now()}.${ext}`;
+    }
   } catch {
-    return `video_${Date.now()}.${type.toLowerCase()}`;
+    return `VideoDownloader/video_${Date.now()}.${ext}`;
   }
 }
 

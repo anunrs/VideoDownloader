@@ -133,7 +133,8 @@ body {
 .badge-webm    { background: var(--purple); color: #fff; }
 .badge-ts      { background: #e67e22;       color: #fff; }
 .badge-video   { background: var(--grey);   color: #fff; }
-.badge-youtube { background: #ff0000;       color: #fff; }
+.badge-youtube   { background: #ff0000;      color: #fff; }
+.badge-instagram { background: #c13584;      color: #fff; }
 
 /* URL text */
 .stream-info {
@@ -168,7 +169,8 @@ body {
   opacity: 0.55;
   cursor: default;
 }
-.btn-download.done    { background: var(--green); }
+.btn-download.done    { background: var(--green); }         /* in-progress  */
+.btn-download.success { background: #1e8449; }              /* completed    */
 .btn-download.failed  { background: var(--accent); }
 
 /* ── Footer ──────────────────────────────────────────────────────────────── */

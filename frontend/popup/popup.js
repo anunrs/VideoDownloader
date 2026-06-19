@@ -37,11 +37,13 @@ function renderStreams(streams) {
     const li = document.createElement('li');
     li.className = 'stream-item';
 
-    const badgeClass = `badge-${stream.type.toLowerCase()}`;
-    const ds = stream.downloadState; // 'downloading' | 'done' | 'failed' | null
-    const isActive = ds === 'downloading' || ds === 'done';
-    const btnLabel = isActive ? 'Downloading ↓' : 'Download';
-    const displayUrl = friendlyUrl(stream.url, stream.type);
+    const badgeClass    = `badge-${stream.type.toLowerCase()}`;
+    const ds            = stream.downloadState; // 'downloading' | 'done' | 'failed' | null
+    const isDownloading = ds === 'downloading';
+    const isDone        = ds === 'done';
+    const isActive      = isDownloading || isDone;
+    const btnLabel      = isDone ? 'Done \u2713' : isDownloading ? 'Downloading \u2193' : 'Download';
+    const displayUrl    = friendlyUrl(stream.url, stream.type);
 
     li.innerHTML = `
       <span class="badge ${badgeClass}">${stream.type}</span>
@@ -55,17 +57,25 @@ function renderStreams(streams) {
     `;
 
     const btn = li.querySelector('.btn-download');
-    if (isActive) btn.classList.add('done');
+    if (isDone)        btn.classList.add('success');
+    if (isDownloading) btn.classList.add('done');
     btn.addEventListener('click', onDownloadClick);
     streamList.appendChild(li);
 
-    if (isActive) {
-      showHint(btn, 'Downloading via companion app — file will appear in ~/Downloads/VideoDownloader.');
+    if (isDone) {
+      showHint(btn, 'Saved to ~/Downloads/VideoDownloader.');
+    } else if (isDownloading) {
+      showHint(btn, 'Downloading via companion app \u2014 file will appear in ~/Downloads/VideoDownloader.');
     }
   });
 
   showState('list');
   footerCount.textContent = `${streams.length} stream${streams.length !== 1 ? 's' : ''} found`;
+
+  // If any stream is still downloading, keep polling for completion
+  if (streams.some(s => s.downloadState === 'downloading')) {
+    startPolling();
+  }
 }
 
 // ─── Download click handler ───────────────────────────────────────────────────
@@ -78,7 +88,7 @@ function onDownloadClick(e) {
   const streamType = btn.dataset.type;
 
   btn.disabled    = true;
-  btn.textContent = 'Starting…';
+  btn.textContent = 'Starting\u2026';
 
   // Safety net: if background never replies (e.g. service worker died),
   // reset the button so the user isn't stuck.
@@ -96,12 +106,13 @@ function onDownloadClick(e) {
     }
 
     if (response.success) {
-      btn.textContent = 'Downloading ↓';
+      btn.textContent = 'Downloading \u2193';
       btn.classList.add('done');
       const hint = response.via === 'native'
-        ? 'Downloading via companion app — file will appear in ~/Downloads/VideoDownloader.'
+        ? 'Downloading via companion app \u2014 file will appear in ~/Downloads/VideoDownloader.'
         : 'Check the Chrome download bar at the bottom of the window.';
       showHint(btn, hint);
+      if (response.via === 'native') startPolling();
     } else if (response.canUseCompanion) {
       // Browser couldn't fetch it directly (CDN token, auth, etc.)
       setFailed(btn, 'Direct download blocked by CDN. Install the companion app for this type.');
@@ -140,6 +151,57 @@ function setFailed(btn, message) {
   }, 5000);
 }
 
+// ─── Polling for completion ───────────────────────────────────────────────────
+
+let _pollTimer = null;
+
+function startPolling() {
+  if (_pollTimer) return;
+  _pollTimer = setInterval(pollDownloadStatus, 2000);
+}
+
+function stopPolling() {
+  clearInterval(_pollTimer);
+  _pollTimer = null;
+}
+
+function pollDownloadStatus() {
+  chrome.runtime.sendMessage({ type: 'GET_STREAMS' }, (response) => {
+    const streams = response?.streams ?? [];
+    let anyDownloading = false;
+
+    streamList.querySelectorAll('.btn-download').forEach((btn) => {
+      const url    = btn.dataset.url;
+      const stream = streams.find(s => s.url === url);
+      if (!stream) return;
+
+      const ds = stream.downloadState;
+
+      if (ds === 'downloading') {
+        anyDownloading = true;
+        return;
+      }
+
+      if (ds === 'done' && !btn.classList.contains('success')) {
+        btn.textContent = 'Done \u2713';
+        btn.classList.remove('done');
+        btn.classList.add('success');
+        // Swap the "Downloading..." hint to a completion message
+        const li   = btn.closest('li');
+        const prev = li?.nextElementSibling;
+        if (prev?.classList.contains('hint-row')) prev.remove();
+        showHint(btn, 'Saved to ~/Downloads/VideoDownloader.');
+      } else if (ds === 'failed' && !btn.classList.contains('failed')) {
+        setFailed(btn, 'Download failed. Check log: ~/Downloads/VideoDownloader/logs/downloader.log');
+      }
+    });
+
+    if (!anyDownloading) stopPolling();
+  });
+}
+
+// ─── UI helpers ───────────────────────────────────────────────────────────────
+
 // Inserts a small info row below the stream item with a message
 function showHint(btn, message) {
   const li = btn.closest('li');
@@ -154,8 +216,6 @@ function showHint(btn, message) {
   li.insertAdjacentElement('afterend', row);
 }
 
-// ─── UI helpers ───────────────────────────────────────────────────────────────
-
 function showState(state) {
   stateEmpty.classList.add('hidden');
   stateLoading.classList.add('hidden');
@@ -168,12 +228,17 @@ function showState(state) {
 
 // Returns a shorter display string for well-known URL patterns.
 function friendlyUrl(url, type) {
-  if (type === 'YouTube') {
-    try {
-      const v = new URL(url).searchParams.get('v');
+  try {
+    const u = new URL(url);
+    if (type === 'YouTube') {
+      const v = u.searchParams.get('v');
       return v ? `youtube.com/watch?v=${v}` : url;
-    } catch {}
-  }
+    }
+    if (type === 'Instagram') {
+      // Show e.g. "instagram.com/reel/ABC123/"
+      return `instagram.com${u.pathname}`;
+    }
+  } catch {}
   return url;
 }
 
